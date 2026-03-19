@@ -1,123 +1,137 @@
 /**
- * 104 職缺黑名單過濾器 - 核心邏輯腳本
- * 功能：自動識別網頁中的公司名稱，並根據黑名單進行即時隱藏與封鎖功能注入。
+ * 104 職缺黑名單管理邏輯 (Popup Script)
+ * 升級版 V1.1：支援 Checkbox 勾選、搜尋過濾及備份匯入功能，防止資料誤刪。
  */
 
-/**
- * 主要執行函式：執行黑名單比對與 DOM 過濾
- * 邏輯：從 Chrome Storage 取得黑名單，遍歷網頁連結並執行對應動作。
- */
-function finalDestroyer() {
+document.addEventListener("DOMContentLoaded", () => {
+  const container = document.getElementById("list-container");
+  const filterInput = document.getElementById("filter-input");
+  const deleteBtn = document.getElementById("delete-selected");
+  const saveBtn = document.getElementById("save");
+  const exportBtn = document.getElementById("export-btn");
+  const importBtn = document.getElementById("import-btn");
+
+  let masterList = []; // MIS 資料緩衝區：保存完整原始名單
+
+  /**
+   * 1. 初始化載入邏輯
+   */
   chrome.storage.local.get(["blacklist"], (res) => {
-    // 取得黑名單並進行標準化處理（去空白、轉小寫、過濾空值）
-    const blacklist = (res.blacklist || [])
-      .map((k) => k.trim().toLowerCase())
-      .filter((k) => k);
+    masterList = res.blacklist || [];
+    render(masterList);
+  });
 
-    // 選取網頁中所有的 <a> 標籤，準備進行掃描
-    const allLinks = document.querySelectorAll("a");
+  /**
+   * 渲染函式：將陣列轉化為具備 Checkbox 的清單
+   */
+  function render(list) {
+    container.innerHTML = "";
+    list.forEach((name, index) => {
+      const item = document.createElement("div");
+      item.className = "list-item";
+      item.style =
+        "display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 14px;";
 
-    allLinks.forEach((link) => {
-      // 提取公司名稱並移除按鈕產生的干擾文字
-      const text = link.innerText.replace("[封鎖]", "").trim();
-      if (!text || text.length < 2) return;
+      item.innerHTML = `
+        <input type="checkbox" class="del-check" data-index="${index}" style="margin-right: 10px;">
+        <span class="company-name" style="flex: 1;">${name}</span>
+      `;
+      container.appendChild(item);
+    });
+  }
 
-      const lowerName = text.toLowerCase();
-      // 檢查當前公司名稱是否包含在黑名單關鍵字中
-      const shouldBlock = blacklist.some((key) => lowerName.includes(key));
+  /**
+   * 搜尋過濾邏輯 (僅隱藏項目，不影響 masterList)
+   */
+  filterInput.addEventListener("input", () => {
+    const keyword = filterInput.value.trim().toLowerCase();
+    const items = container.querySelectorAll(".list-item");
 
-      if (shouldBlock) {
-        /**
-         * 命中黑名單處理邏輯
-         * 向上追蹤 5 層父元素以確保能包覆整個職缺卡片區域 (Job Card Container)
-         */
-        let target = link;
-        for (let i = 0; i < 5; i++) {
-          if (target.parentElement) target = target.parentElement;
-        }
-        // 強制隱藏該元件，避免 104 原生樣式覆寫
-        target.style.setProperty("display", "none", "important");
-      } else {
-        /**
-         * 未命中黑名單：檢查是否為公司連結，並判斷是否需注入「封鎖」按鈕
-         * 識別特徵：包含 company 關鍵字、特定 Class 或 custno 參數
-         */
-        const isCompanyLink =
-          link.href.includes("company") ||
-          link.classList.contains("cust-name") ||
-          link.href.includes("custno=");
-
-        // 使用 dataset 標記位防止重複注入按鈕
-        if (isCompanyLink && !link.dataset.hasBlockBtn) {
-          link.dataset.hasBlockBtn = "true";
-          injectBtn(link, text);
-        }
-      }
+    items.forEach((item) => {
+      const name = item.querySelector(".company-name").innerText.toLowerCase();
+      item.style.display = name.includes(keyword) ? "flex" : "none";
     });
   });
-}
 
-/**
- * 按鈕注入函式
- * @param {HTMLElement} el - 目標連結元素
- * @param {string} name - 公司名稱
- */
-function injectBtn(el, name) {
-  // 二次檢查確保同一層級不重複產生按鈕
-  if (el.parentElement.querySelector(".my-block-btn")) return;
+  /**
+   * 2. 移除勾選項目邏輯
+   */
+  deleteBtn.addEventListener("click", () => {
+    const checks = container.querySelectorAll(".del-check:checked");
+    if (checks.length === 0) {
+      alert("請先勾選要移除的公司！");
+      return;
+    }
 
-  const btn = document.createElement("span");
-  btn.innerText = " [封鎖]";
-  btn.className = "my-block-btn";
-  // 設定顯眼的紅色警示樣式
-  btn.style =
-    "color:#ff4d4f; cursor:pointer; font-weight:bold; font-size:13px; margin-left:8px; display:inline-block;";
+    // 由大到小排序索引，避免刪除時影響後續位置
+    const indicesToDelete = Array.from(checks)
+      .map((c) => parseInt(c.getAttribute("data-index")))
+      .sort((a, b) => b - a);
 
-  btn.onclick = (e) => {
-    // 攔截事件冒泡與預設行為，防止點擊時觸發 104 網頁跳轉
-    e.preventDefault();
-    e.stopPropagation();
+    indicesToDelete.forEach((idx) => {
+      masterList.splice(idx, 1);
+    });
 
-    // 執行確認程序
-    const isConfirmed = confirm(`確定要封鎖「${name}」嗎？`);
+    render(masterList);
+    filterInput.value = "";
+    alert("已從清單中移除所選項目，請記得按下儲存以生效。");
+  });
 
-    if (isConfirmed) {
-      /**
-       * 使用者體驗優化 (UX Optimistic UI)
-       * 先執行視覺上的隱藏，讓使用者感覺操作即刻生效，無需等待資料庫寫入完成
-       */
-      let target = el;
-      for (let i = 0; i < 5; i++) {
-        if (target.parentElement) target = target.parentElement;
-      }
-      target.style.setProperty("display", "none", "important");
+  /**
+   * 3. 匯出與匯入 (災難復原機制)
+   */
+  exportBtn.onclick = () => {
+    if (masterList.length === 0) {
+      alert("目前沒有資料可以匯出！");
+      return;
+    }
+    const dataStr = JSON.stringify(masterList);
 
-      // 非同步將封鎖名稱寫入 Chrome 本地端儲存空間
-      chrome.storage.local.get(["blacklist"], (res) => {
-        const list = res.blacklist || [];
-        if (!list.includes(name)) {
-          list.push(name);
-          chrome.storage.local.set({ blacklist: list });
-        }
+    // 使用 navigator.clipboard 進行複製
+    navigator.clipboard
+      .writeText(dataStr)
+      .then(() => {
+        alert("備份資料已複製到剪貼簿！\n請妥善保存於記事本。");
+      })
+      .catch((err) => {
+        console.error("無法複製", err);
       });
+  };
+
+  importBtn.onclick = () => {
+    const inputData = prompt(
+      '請貼上備份的 JSON 字串：\n(格式範例：["公司A", "公司B"])',
+    );
+    if (inputData) {
+      try {
+        const parsedData = JSON.parse(inputData);
+        if (Array.isArray(parsedData)) {
+          // 合併並自動去重
+          masterList = [...new Set([...masterList, ...parsedData])];
+          render(masterList);
+          alert(
+            `成功匯入！目前共 ${masterList.length} 筆資料。\n請按下「儲存變更」正式寫入系統。`,
+          );
+        } else {
+          throw new Error();
+        }
+      } catch (e) {
+        alert("匯入失敗！格式不正確。");
+      }
     }
   };
-  // 將按鈕掛載於公司名稱連結之後
-  el.parentElement.appendChild(btn);
-}
 
-/**
- * 滾動監聽優化 (Debounce 概念)
- * 104 採用異步載入機制，當使用者捲動頁面時，以 300ms 緩衝觸發掃描，平衡效能與體驗
- */
-let scrollTimeout;
-window.addEventListener("scroll", () => {
-  clearTimeout(scrollTimeout);
-  scrollTimeout = setTimeout(finalDestroyer, 300);
+  /**
+   * 4. 最終資料儲存與分頁重整
+   */
+  saveBtn.addEventListener("click", () => {
+    chrome.storage.local.set({ blacklist: masterList }, () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs[0]?.id) {
+          chrome.tabs.reload(tabs[0].id);
+        }
+      });
+      alert("黑名單已安全更新並儲存！");
+    });
+  });
 });
-
-/**
- * 初始觸發
- * 延遲 1 秒執行，確保 104 異步載入的 DOM 元素已渲染完成
- */
-setTimeout(finalDestroyer, 1000);
