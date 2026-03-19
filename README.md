@@ -1,8 +1,9 @@
 # VibeCode-104-Block
 
 <div align="center">
-<img width="339" height="391" alt="104 Block Plugin Screenshot" src="https://github.com/user-attachments/assets/0d709d6a-3f5a-4c68-b3d7-89c17a23dae1" />
+<img width="361" height="536" alt="104-Block-v1 1" src="https://github.com/user-attachments/assets/1474af08-bea3-441d-9742-93e09b48b4bf" />
 <br>
+
 
 <h3>104 職缺黑名單過濾器</h3>
 
