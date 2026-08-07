@@ -1,38 +1,21 @@
 {
-  // 擴充功能清單版本，目前 Chrome 規定必須使用 V3 規範
   "manifest_version": 3,
-
-  // 擴充功能名稱
-  "name": "104 職缺黑名單過濾器",
-
-  // 專案版本號：升級至 1.1，引入搜尋、勾選管理與備份機制
-  "version": "1.1",
-
-  // 擴充功能核心權限要求
-  // storage: 用於持久化黑名單數據
-  // tabs: 1.1 版新增，用於儲存後自動重整分頁，提升使用者體驗
+  "name": "LinkedIn 職缺與公司黑名單過濾器",
+  "version": "1.3",
+  "description": "過濾 LinkedIn 上的特定公司與單一職缺，支援黑名單管理與備份",
   "permissions": ["storage", "tabs"],
-
-  // 主機存取權限：允許擴充功能在所有 104 子網域下運行
-  "host_permissions": ["*://*.104.com.tw/*"],
-
-  // 內容腳本注入規則
+  "host_permissions": ["*://*.linkedin.com/*"],
   "content_scripts": [
     {
-      // 網域匹配規則：採取「最小權限原則」，僅在列表頁面執行過濾邏輯
-      "matches": ["*://pda.104.com.tw/work/mate/list/*"],
-
-      // 指定注入的邏輯檔案
+      "matches": [
+        "*://*.linkedin.com/jobs/*",
+        "*://*.linkedin.com/jobs/search*"
+      ],
       "js": ["content.js"],
-
-      // 注入時機：在瀏覽器空閒時載入，確保效能與抓取成功率
       "run_at": "document_idle"
     }
   ],
-
-  // 使用者介面配置
   "action": {
-    // 點擊擴充功能圖示後彈出的管理視窗 (Popup UI)
     "default_popup": "popup.html"
   }
 }
