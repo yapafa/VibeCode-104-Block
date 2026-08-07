@@ -1,109 +1,169 @@
 /**
- * 104 職缺黑名單過濾器 - 核心邏輯腳本
- * 功能：自動識別網頁中的公司名稱，並根據黑名單進行即時隱藏與封鎖功能注入。
+ * LinkedIn 職缺與公司黑名單過濾器 - V3.1 (垂直堆疊按鈕版)
  */
 
-/**
- * 主要執行函式：執行黑名單比對與 DOM 過濾
- */
-function finalDestroyer() {
-  chrome.storage.local.get(["blacklist"], (res) => {
-    // 取得黑名單並進行標準化處理
-    const blacklist = (res.blacklist || [])
-      .map((k) => k.trim().toLowerCase())
-      .filter((k) => k);
+function processNode(targetNode = document) {
+  if (!chrome?.runtime?.id) return;
 
-    // 選取網頁中所有的 <a> 標籤
-    const allLinks = document.querySelectorAll("a");
+  try {
+    chrome.storage.local.get(["blacklist", "blockedJobs"], (res) => {
+      if (!chrome?.runtime?.id) return;
 
-    allLinks.forEach((link) => {
-      // 提取公司名稱並移除按鈕產生的干擾文字
-      const text = link.innerText.replace("[封鎖]", "").trim();
-      if (!text || text.length < 2) return;
+      const companyBlacklist = (res.blacklist || []).map((k) => k.trim().toLowerCase()).filter(Boolean);
+      const blockedJobs = res.blockedJobs || [];
+      const blockedJobIds = blockedJobs.map((j) => String(j.id));
 
-      const lowerName = text.toLowerCase();
-      // 檢查當前公司名稱是否命中黑名單關鍵字
-      const shouldBlock = blacklist.some((key) => lowerName.includes(key));
+      // 1. 抓取所有職缺卡片容器 (包含新版 componentkey="job-card-..." 與舊版 li / job-card)
+      const jobCards = targetNode.querySelectorAll('[componentkey*="job-card-component-ref-"], div[role="button"][componentkey*="job-card"]');
 
-      if (shouldBlock) {
-        /**
-         * 命中黑名單處理邏輯：隱藏整個職缺卡片
-         */
-        let target = link;
-        for (let i = 0; i < 5; i++) {
-          if (target.parentElement) target = target.parentElement;
+      jobCards.forEach((card) => {
+        // A. 擷取 Job ID
+        const componentKey = card.getAttribute("componentkey") || "";
+        const idMatch = componentKey.match(/\d+/);
+        const jobId = idMatch ? idMatch[0] : null;
+
+        // B. 擷取職缺標題
+        let jobTitle = "";
+        const titleSpan = card.querySelector('p span[aria-hidden="true"]');
+        if (titleSpan) {
+          jobTitle = titleSpan.childNodes[0]?.textContent?.trim() || titleSpan.innerText.trim();
+        } else {
+          const pEl = card.querySelector('p');
+          if (pEl) jobTitle = pEl.innerText.trim();
         }
-        target.style.setProperty("display", "none", "important");
-      } else {
-        /**
-         * 未命中黑名單：判斷是否需注入「封鎖」按鈕
-         */
-        const isCompanyLink =
-          link.href.includes("company") ||
-          link.classList.contains("cust-name") ||
-          link.href.includes("custno=");
 
-        if (isCompanyLink && !link.dataset.hasBlockBtn) {
-          link.dataset.hasBlockBtn = "true";
-          injectBtn(link, text);
+        // C. 擷取公司名稱
+        let companyName = "";
+        const allParagraphs = card.querySelectorAll('p');
+        if (allParagraphs.length >= 2) {
+          companyName = allParagraphs[1].innerText.trim();
         }
-      }
-    });
-  });
-}
 
-/**
- * 按鈕注入函式
- */
-function injectBtn(el, name) {
-  if (el.parentElement.querySelector(".my-block-btn")) return;
+        const lowerCompany = companyName.toLowerCase();
 
-  const btn = document.createElement("span");
-  btn.innerText = " [封鎖]";
-  btn.className = "my-block-btn";
-  btn.style =
-    "color:#ff4d4f; cursor:pointer; font-weight:bold; font-size:13px; margin-left:8px; display:inline-block;";
+        // D. 比對黑名單並隱藏
+        const isCompanyBlocked = lowerCompany && companyBlacklist.some((k) => lowerCompany.includes(k));
+        const isJobBlocked = jobId && blockedJobIds.includes(String(jobId));
 
-  btn.onclick = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const isConfirmed = confirm(`確定要封鎖「${name}」嗎？`);
-
-    if (isConfirmed) {
-      // 視覺即時隱藏 (Optimistic UI)
-      let target = el;
-      for (let i = 0; i < 5; i++) {
-        if (target.parentElement) target = target.parentElement;
-      }
-      target.style.setProperty("display", "none", "important");
-
-      // 寫入 Storage
-      chrome.storage.local.get(["blacklist"], (res) => {
-        let list = res.blacklist || [];
-
-        // V1.1 強化點：確保寫入前進行去重與清洗，防止儲存髒資料
-        const cleanName = name.trim();
-        if (!list.includes(cleanName)) {
-          list.push(cleanName);
-          chrome.storage.local.set({ blacklist: list }, () => {
-            console.log(`[系統訊息] 已成功封鎖：${cleanName}`);
-          });
+        if (isCompanyBlocked || isJobBlocked) {
+          card.style.setProperty("display", "none", "important");
+        } else {
+          // E. 注入按鈕
+          if (!card.querySelector('.my-block-btn-row')) {
+            injectBtnRow(card, companyName, jobId, jobTitle);
+          }
         }
       });
-    }
-  };
-  el.parentElement.appendChild(btn);
+    });
+  } catch (e) {
+    // 靜默處理 context 銷毀狀況
+  }
 }
 
 /**
- * 監聽邏輯優化
+ * 建立按鈕並垂直注入到卡片內
  */
-let scrollTimeout;
-window.addEventListener("scroll", () => {
-  clearTimeout(scrollTimeout);
-  scrollTimeout = setTimeout(finalDestroyer, 300);
+function injectBtnRow(cardContainer, companyName, jobId, jobTitle) {
+  if (cardContainer.querySelector(".my-block-btn-row")) return;
+
+  // 改為 flex-direction: column (上下排列)，並向左對齊 (align-items: flex-start)
+  const btnRow = document.createElement("div");
+  btnRow.className = "my-block-btn-row";
+  btnRow.style.cssText = "display: flex; flex-direction: column; gap: 4px; margin-top: 6px; margin-bottom: 6px; align-items: flex-start; z-index: 100; position: relative;";
+
+  const baseBtnStyle = `
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: all 0.15s ease-in-out;
+    user-select: none;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    white-space: nowrap;
+  `;
+
+  // 1. 封鎖公司按鈕
+  if (companyName) {
+    const compBtn = document.createElement("button");
+    compBtn.type = "button";
+    compBtn.innerText = "🚫 封鎖公司";
+    compBtn.style.cssText = baseBtnStyle + "color: #d9363e; background: #fff1f0; border: 1px solid #ffa39e;";
+
+    compBtn.onmouseover = () => { compBtn.style.background = "#ffccc7"; };
+    compBtn.onmouseout = () => { compBtn.style.background = "#fff1f0"; };
+    compBtn.onmousedown = () => { compBtn.style.transform = "scale(0.95)"; };
+    compBtn.onmouseup = () => { compBtn.style.transform = "scale(1)"; };
+
+    compBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (confirm(`確定要封鎖公司「${companyName}」嗎？\n(今後該公司的職缺將自動隱藏)`)) {
+        cardContainer.style.setProperty("display", "none", "important");
+        chrome.storage.local.get(["blacklist"], (res) => {
+          let list = res.blacklist || [];
+          if (!list.includes(companyName.trim())) {
+            list.push(companyName.trim());
+            chrome.storage.local.set({ blacklist: list }, () => processNode());
+          }
+        });
+      }
+    };
+    btnRow.appendChild(compBtn);
+  }
+
+  // 2. 封鎖此職缺按鈕
+  if (jobId) {
+    const jobBtn = document.createElement("button");
+    jobBtn.type = "button";
+    jobBtn.innerText = "❌ 封鎖此職缺";
+    jobBtn.style.cssText = baseBtnStyle + "color: #d46b08; background: #fffbe6; border: 1px solid #ffe58f;";
+
+    jobBtn.onmouseover = () => { jobBtn.style.background = "#fff1b8"; };
+    jobBtn.onmouseout = () => { jobBtn.style.background = "#fffbe6"; };
+    jobBtn.onmousedown = () => { jobBtn.style.transform = "scale(0.95)"; };
+    jobBtn.onmouseup = () => { jobBtn.style.transform = "scale(1)"; };
+
+    jobBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (confirm(`確定要封鎖此職缺嗎？\n(職缺：${jobTitle || jobId})`)) {
+        cardContainer.style.setProperty("display", "none", "important");
+        chrome.storage.local.get(["blockedJobs"], (res) => {
+          let list = res.blockedJobs || [];
+          if (!list.some((j) => String(j.id) === String(jobId))) {
+            list.push({ id: jobId, title: jobTitle || "未命名職缺" });
+            chrome.storage.local.set({ blockedJobs: list }, () => processNode());
+          }
+        });
+      }
+    };
+    btnRow.appendChild(jobBtn);
+  }
+
+  // 找到標題與公司資訊區域，把按鈕插在下方
+  const targetParent = cardContainer.querySelector('figure')?.parentElement || cardContainer;
+  targetParent.appendChild(btnRow);
+}
+
+// ----------------------------------------------------
+// 動態監聽 DOM 變化機制 (MutationObserver)
+// ----------------------------------------------------
+let timer = null;
+const observer = new MutationObserver(() => {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => {
+    processNode();
+  }, 150);
 });
 
-// 初始觸發
-setTimeout(finalDestroyer, 1000);
+observer.observe(document.body, {
+  childList: true,
+  subtree: true
+});
+
+// 初次載入與滾動備用監聽
+processNode();
+window.addEventListener("scroll", () => processNode(), { passive: true });
