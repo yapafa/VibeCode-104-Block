@@ -2,21 +2,42 @@
 <html lang="zh-TW">
     <head>
         <meta charset="UTF-8" />
-        <title>104 職缺黑名單管理介面</title>
+        <title>LinkedIn 黑名單管理介面</title>
         <style>
             body {
-                width: 320px;
+                width: 340px;
                 padding: 15px;
                 font-family: "Microsoft JhengHei", "PingFang TC", sans-serif;
                 background-color: #f9f9f9;
+                margin: 0;
             }
             h3 {
                 margin-top: 0;
                 margin-bottom: 12px;
                 font-size: 18px;
                 color: #333;
-                border-bottom: 2px solid #ff6000;
+                border-bottom: 2px solid #0a66c2;
                 padding-bottom: 5px;
+            }
+            .tab-group {
+                display: flex;
+                margin-bottom: 10px;
+                gap: 5px;
+            }
+            .tab-btn {
+                flex: 1;
+                padding: 6px;
+                background: #e0e0e0;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: bold;
+                color: #555;
+            }
+            .tab-btn.active {
+                background: #0a66c2;
+                color: white;
             }
             #filter-input {
                 width: 100%;
@@ -29,7 +50,7 @@
             }
             #list-container {
                 width: 100%;
-                height: 250px;
+                height: 230px;
                 overflow-y: auto;
                 background: white;
                 border: 1px solid #ddd;
@@ -37,18 +58,18 @@
                 box-sizing: border-box;
             }
             .list-item:hover {
-                background-color: #fff7f2;
+                background-color: #f0f7fe;
             }
-            button {
+            button.main-btn {
                 width: 100%;
                 padding: 10px;
                 cursor: pointer;
                 border: none;
                 border-radius: 4px;
                 font-weight: bold;
-                font-size: 15px;
+                font-size: 14px;
                 transition: background 0.3s;
-                margin-top: 10px;
+                margin-top: 8px;
             }
             #delete-selected {
                 background: #666;
@@ -58,13 +79,12 @@
                 background: #444;
             }
             #save {
-                background: #ff6000;
+                background: #0a66c2;
                 color: white;
             }
             #save:hover {
-                background: #e65600;
+                background: #004182;
             }
-            /* 維護區按鈕樣式 */
             .maintenance-zone {
                 display: flex;
                 gap: 5px;
@@ -73,9 +93,13 @@
                 padding-top: 10px;
             }
             .maintenance-zone button {
-                margin-top: 0;
+                flex: 1;
                 font-size: 12px;
                 padding: 8px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: bold;
             }
             #export-btn {
                 background: #28a745;
@@ -88,18 +112,23 @@
         </style>
     </head>
     <body>
-        <h3>104 職缺黑名單 V1.1</h3>
+        <h3>LinkedIn 黑名單 V1.2</h3>
+
+        <div class="tab-group">
+            <button id="tab-companies" class="tab-btn active">🏢 公司黑名單</button>
+            <button id="tab-jobs" class="tab-btn">💼 職缺黑名單</button>
+        </div>
 
         <input
             type="text"
             id="filter-input"
-            placeholder="🔍 搜尋已封鎖的公司..."
+            placeholder="🔍 搜尋已封鎖的項目..."
         />
 
         <div id="list-container"></div>
 
-        <button id="delete-selected">移除所選項目</button>
-        <button id="save">儲存變更並重整頁面</button>
+        <button id="delete-selected" class="main-btn">移除所選項目</button>
+        <button id="save" class="main-btn">儲存變更並重整頁面</button>
 
         <div class="maintenance-zone">
             <button id="export-btn">匯出備份</button>
